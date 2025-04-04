@@ -1,0 +1,640 @@
+---
+title: "STA457 Final Code"
+author: "Sameeck Bhatia, Arnav Dey, Sofia Duzha, Tanya Pandey"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages(c(
+  "knitr",
+  "kableExtra",
+  "zoo",
+  "tidyverse",
+  "forecast",
+  "stats",
+  "tseries",
+  "astsa",
+  "MLmetrics",
+  "aTSA",
+  "dynlm",
+  "lmtest",
+  "ARDL",
+  "caret",
+  "quadprog",
+  "urca",
+  "vars",
+  "ggplot2",
+  "dplyr",
+  "tidyr",
+  "AER",
+  "strucchange"
+))
+```
+
+```{r}
+library(knitr)
+library(kableExtra)
+library(zoo)
+library(tidyverse)
+library(forecast)
+library(stats)
+library(tseries)
+library(astsa)
+library(MLmetrics)
+library(aTSA)
+library(dynlm)
+library(lmtest)
+library(ARDL)
+library(caret)
+library(quadprog)
+library(urca)
+library(vars)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(AER)
+library(strucchange)
+```
+
+```{r}
+data <- data.frame(
+  Variable = c("ICCO Price", "Ghana Ex Rate", "Ghana Avg Temp", "Cameroon Ex Rate", 
+               "Cameroon Avg Temp", "Ivory Coast Ex Rate", "Ivory Coast Avg Temp", 
+               "Nigeria Ex Rate", "Nigeria Avg Temp"),
+  Min = c(774.1, 0.0600, 71.00, 0.0015, 68.70, 0.0015, 70.60, 0.0006, 70.40),
+  Q1 = c(1559.0, 0.1700, 79.00, 0.0017, 73.80, 0.0017, 76.60, 0.0024, 75.20),
+  Median = c(2202.3, 0.2500, 82.00, 0.0017, 75.80, 0.0017, 77.90, 0.0028, 77.30),
+  Mean = c(2338.1, 0.3667, 81.57, 0.0018, 76.57, 0.0018, 78.15, 0.0038, 77.29),
+  Q3 = c(2735.4, 0.5700, 84.00, 0.0019, 78.90, 0.0020, 79.70, 0.0061, 79.20),
+  Max = c(11984.7, 1.0600, 90.00, 0.0022, 87.40, 0.0022, 87.50, 0.0068, 85.80),
+  `NA` = c(3324, 1325, 353, 2140, 0, 2142, 0, 2150, 0)
+)
+
+kable(data, caption = "Summary Statistics of Key Variables") |>
+  kable_styling("striped")
+```
+
+```{r, fig.cap='Time Series Plots for Price, Temperature, and Currency Datasets'}
+# Data Loading
+
+yearly_data <- read.csv("data/yearly_final.csv")
+ghana_data <- read.csv("data/ghana_final.csv")
+cameroon_data <- read.csv("data/cameroon_final.csv")
+ivorycoast_data <- read.csv("data/ivorycoast_final.csv")
+nigeria_data <- read.csv("data/nigera_final.csv")
+icco <- read.csv("data/forecasting_icco_final.csv")
+
+
+icco$daily_price <- as.numeric(gsub(",", "", icco$daily_price))
+icco$all_date <- as.Date(icco$all_date)
+ghana_data$ghana_date <- as.Date(ghana_data$ghana_date)
+yearly_data$year <- as.double(yearly_data$year)
+cameroon_data$cameroon_date <- as.Date(cameroon_data$cameroon_date)
+ivorycoast_data$ivorycoast_date <- as.Date(ivorycoast_data$ivorycoast_date)
+nigeria_data$nigeria_date <- as.Date(nigeria_data$nigeria_date)
+
+icco <- icco[icco$all_date >= as.Date("1994-10-10"), ] 
+
+summary(icco$daily_price)
+summary(ghana_data$ghana_ex_rate)
+summary(ghana_data$ghana_avg_temp)
+summary(cameroon_data$cameroon_ex_rate)
+summary(cameroon_data$cameroon_avg_temp)
+summary(ivorycoast_data$ivorycoast_ex_rate)
+summary(ivorycoast_data$ivorycoast_avg_temp)
+summary(nigeria_data$nigeria_ex_rate)
+summary(nigeria_data$nigeria_avg_temp)
+
+colnames(nigeria_data)[colnames(nigeria_data)=='nigeria_date'] <- 'Date'
+colnames(cameroon_data)[colnames(cameroon_data)=='cameroon_date'] <- 'Date'
+colnames(ghana_data)[colnames(ghana_data)=='ghana_date'] <- 'Date'
+colnames(ivorycoast_data)[colnames(ivorycoast_data)=='ivorycoast_date'] <- 'Date'
+colnames(icco)[colnames(icco)=='all_date'] <- 'Date'
+
+# Time Series
+
+dfs <- list(icco,nigeria_data,ghana_data,ivorycoast_data,cameroon_data)
+
+merged_df <- Reduce(function(x,y) merge(x,y, by='Date', all=TRUE),dfs)
+
+merged_df <- na.omit(merged_df)
+
+merged_df <- merged_df %>% 
+  mutate(YearMonth = format(Date, "%Y-%m")) %>%
+  group_by(YearMonth) %>% 
+  summarise(daily_price = mean(daily_price, na.rm = TRUE), 
+            nigeria_ex_rate = mean(nigeria_ex_rate), 
+            nigeria_avg_temp = mean(nigeria_avg_temp), 
+            ghana_ex_rate = mean(ghana_ex_rate), 
+            ghana_avg_temp = mean(ghana_avg_temp), 
+            cameroon_ex_rate = mean(cameroon_ex_rate), 
+            cameroon_avg_temp = mean(cameroon_avg_temp), 
+            ivorycoast_ex_rate = mean(ivorycoast_ex_rate), 
+            ivorycoast_avg_temp = mean(ivorycoast_avg_temp))
+
+merged_df$YearMonth <- as.yearmon(merged_df$YearMonth, format = "%Y-%m")
+merged_df <- na.omit(merged_df)
+
+ts_data <- ts(merged_df[, -1], start = c(2007, 7), frequency = 12) 
+
+par(mfrow = c(3, 3))
+
+plot(ts_data[,1],type = "l", col = "blue", 
+     main = "TS for daily price", 
+     xlab = "Time", ylab = "monthly price")
+
+plot(ts_data[,2],type = "l", col = "blue", 
+     main = "TS for nigeria ex rate", 
+     xlab = "Time", ylab = "monthly ex rate")
+
+plot(ts_data[,3],type = "l", col = "blue", 
+     main = "TS for nigeria avg temp", 
+     xlab = "Time", ylab = "monthy avg temp")
+
+plot(ts_data[,4],type = "l", col = "blue", 
+     main = "TS for ghana ex rate", 
+     xlab = "Time", ylab = "monthly ex rate")
+
+plot(ts_data[,5],type = "l", col = "blue", 
+     main = "TS for ghana avg temp", 
+     xlab = "Time", ylab = "monthly avg temp")
+
+plot(ts_data[,6],type = "l", col = "blue", 
+     main = "TS for Cameroon ex rate", 
+     xlab = "Time", ylab = "monthly ex rate")
+
+plot(ts_data[,7],type = "l", col = "blue", 
+     main = "TS for Cameroon avg temp", 
+     xlab = "Time", ylab = "monthly avg temp")
+
+plot(ts_data[,8],type = "l", col = "blue", 
+     main = "TS for ivorycoast ex rate", 
+     xlab = "Time", ylab = "monthly ex rate")
+
+plot(ts_data[,9],type = "l", col = "blue", 
+     main = "TS for ivorycoast avg temp", 
+     xlab = "Time", ylab = "monthly avg temp")
+```
+
+```{r, fig.width=6, fig.height=4, fig.cap='ARIMA Forecast on Testing Data from August 2024 to November 2024'}
+icco <- read_csv("data/Daily Prices_ICCO.csv", show_col_types = FALSE)
+
+icco <- icco |>
+  rename("date" = Date,
+         "price" = `ICCO daily price (US$/tonne)`) |>
+  mutate(date = as.Date(date, format = "%d/%m/%Y")) |>
+  arrange(date) |>
+  mutate(day = day(date),
+         week = week(date),
+         month = month(date),
+         year = year(date))
+
+price_ts <- icco |>
+  dplyr::select(month, year, price) |>
+  group_by(year, month) |>
+  summarise(price = mean(price)) |>
+  pull(price)
+
+price_ts_train <- price_ts[154:358] |>
+  as.ts()
+
+price_ts_test <- price_ts[359:362] |>
+  as.ts()
+
+# Spectral Analysis
+
+n <- length(as.numeric(price_ts_train))
+n1 <- nextn(n)
+
+par(mfrow=c(1,1))
+price_ts_train.per <- mvspec(price_ts_train, log="yes")
+u <- which.max(price_ts_train.per$spec)
+
+LCL <- 2*price_ts_train.per$spec[2]/qchisq(.975,2)
+UCL <- 2*price_ts_train.per$spec[2]/qchisq(.025,2)
+
+# ARIMA Analysis
+
+tseries::adf.test(price_ts_train)
+
+diff_price_ts_train <- diff(price_ts_train)
+tseries::adf.test(diff_price_ts_train)
+
+acf(diff_price_ts_train)
+pacf(diff_price_ts_train)
+
+model <- Arima(diff_price_ts_train, order = c(2, 1, 2))
+
+t1 <- c(price_ts_train, price_ts_test)
+
+training_forecast <- forecast::forecast(model, h = 4) |>
+  as.data.frame() |>
+  pull(`Point Forecast`) |>
+  cumsum() +
+  price_ts_train[205]
+
+df <- data.frame(
+  time = rep(1:4, 2),
+  price = c(c(price_ts_train, training_forecast)[206:209],
+            t1[206:209]),
+  type = rep(c("Forecast", "Actual"), each = 4)
+)
+
+ggplot(df, aes(x = time, y = price, color = type)) +
+  geom_line() +
+  scale_color_manual(values = c("Forecast" = "blue", "Actual" = "black")) +
+  scale_y_continuous(limits = c(6000, 8000)) +
+  labs(x = "Time (August 2024 - November 2024)", y = "Price ($)", color = "Legend")
+```
+
+```{r, fig.width=6, fig.height=4, fig.cap='ARIMA Forecast for Cocoa Price from December 2024 to July 2025'}
+future_forecast <- forecast::forecast(model, h = 8) |>
+  as.data.frame() |>
+  pull(`Point Forecast`) |>
+  cumsum() +
+  t1[209]
+
+t2 <- c(t1, future_forecast)
+
+df <- data.frame(
+  time = c(1:length(t1), (length(t1) + 1):length(t2)),
+  price = c(t1, future_forecast),
+  type = c(rep("Actual", length(t1)), rep("Forecast", length(future_forecast)))
+)
+
+ggplot(df, aes(x = time, y = price, color = type)) +
+  geom_line() +
+  scale_color_manual(name = "Legend", values = c("Actual" = "black", "Forecast" = "red")) +
+  labs(x = "Time (July 2007 - November 2024)", y = "Price ($)")
+
+residuals <- residuals(model)
+shapiro <- shapiro.test(residuals)
+arch <- arch.test(estimate(diff_price_ts_train, p = 1, d = 1, q = 1))
+```
+
+```{r}
+# Define response variable (Y) and predictors (X1, X2, ..., X8)
+response_var <- "daily_price"  # Replace with the actual response variable name
+predictor_vars <- c("nigeria_ex_rate", "nigeria_avg_temp", 
+                    "ghana_ex_rate", "ghana_avg_temp", "cameroon_ex_rate", "cameroon_avg_temp", "ivorycoast_ex_rate", "ivorycoast_avg_temp")  # Replace with actual predictor names
+
+# Create a dataframe to store results
+adf_results <- data.frame(Predictor = character(), 
+                          ADF_Stat = numeric(), 
+                          P_Value = numeric(), 
+                          Critical_1pct = numeric(), 
+                          Critical_5pct = numeric(), 
+                          Critical_10pct = numeric(), 
+                          stringsAsFactors = FALSE)
+
+for (predictor in predictor_vars) {
+  
+  # Run linear regression: Response ~ Predictor
+  model <- lm(as.formula(paste(response_var, "~", predictor)), data = ts_data)
+  
+  # Extract residuals
+  residuals_model <- residuals(model)
+  
+  # Perform ADF test on residuals
+  adf_test <- ur.df(residuals_model, type = "none", lags = 5)
+  
+  # Extract results
+  adf_stat <- adf_test@teststat[1]  # ADF test statistic
+  critical_values <- adf_test@cval[1, ]  # Critical values
+  
+  # Store results in dataframe
+  adf_results <- rbind(adf_results, data.frame(
+    Predictor = predictor,
+    ADF_Stat = adf_stat,
+    Critical_1pct = critical_values["1pct"],
+    Critical_5pct = critical_values["5pct"],
+    Critical_10pct = critical_values["10pct"]
+  ))
+}
+
+# testing for stationarity
+
+series_names <- colnames(ts_data)  # Extract column names
+
+# Function to perform ADF test and extract test stat
+adf_test_results <- function(series, name) {
+  test <- ur.df(series, type = "none", lags = 5)  # ADF Test
+  # Extract test statistic
+  test_stat <- summary(test)@teststat[1]  
+  
+  # Extract critical values
+  critical_values <- test@cval[1, ]  # 1% , 5% , 10% levels
+  
+  return(data.frame(Series = name, 
+                    ADF_Stat = test_stat, 
+                    Critical_1pct = critical_values["1pct"], 
+                    Critical_5pct = critical_values["5pct"], 
+                    Critical_10pct = critical_values["10pct"]))
+  
+  
+}
+
+# Apply ADF test to each column in merged_df
+results <- do.call(rbind, lapply(series_names, function(col) adf_test_results(ts_data[, col], col)))
+
+compute_diffs <- function(series_name, data) {
+  order <- ndiffs(data[,series_name], test='adf')  # Compute differencing order
+  return(data.frame(Series = series_name, Differencing_Order = order))
+}
+
+# Apply the function to each column in the dataframe
+results_diff <- bind_rows(lapply(colnames(ts_data), compute_diffs, data = ts_data))
+
+#trend stationarity and structural break tests
+
+#cameroon avg temp
+adf_test_trend_cam <- ur.df(ts_data[,'cameroon_avg_temp'], type = "trend", lags = 1)
+
+#summary(ur.za(merged_df$cameroon_avg_temp, model = "both"))
+
+#ghana avg temp
+adf_test_trend_ghana <- ur.df(ts_data[,'ghana_avg_temp'], type = "trend", lags = 1)
+
+#summary(ur.za(merged_df$ghana_avg_temp, model = "both"))
+
+#nigeria avg temp
+adf_test_trend_nig <- ur.df(ts_data[,'nigeria_avg_temp'], type = "trend", lags = 1)
+
+trend <- seq_along(ts_data[, 1])  # Create a time series of increasing numbers (1, 2, 3, ...)
+
+
+# Add the trend variable to the data frame
+merged_df$trend <- trend
+
+set.seed(123)
+
+train_data <- merged_df[0:205,]
+test_data <- merged_df[201:nrow(merged_df),] 
+
+
+optimal_model_train <- auto_ardl(daily_price ~ cameroon_ex_rate + cameroon_avg_temp + ghana_ex_rate + ghana_avg_temp + trend, data = train_data[, -1], max_order = 5)
+
+# Ensure trend is numeric
+merged_df$trend <- as.numeric(1:nrow(merged_df))
+
+# make columns numeric data type
+merged_df$daily_price <- as.numeric(merged_df$daily_price)
+merged_df$nigeria_ex_rate <- as.numeric(merged_df$nigeria_ex_rate)
+merged_df$ghana_avg_temp <- as.numeric(merged_df$ghana_avg_temp)
+merged_df$nigeria_avg_temp <- as.numeric(merged_df$nigeria_avg_temp)
+merged_df$ghana_ex_rate <- as.numeric(merged_df$ghana_ex_rate)
+merged_df$cameroon_avg_temp <- as.numeric(merged_df$cameroon_avg_temp)
+merged_df$cameroon_ex_rate <- as.numeric(merged_df$cameroon_ex_rate)
+merged_df$ivorycoast_ex_rate <- as.numeric(merged_df$ivorycoast_ex_rate)
+merged_df$ivorycoast_avg_temp <- as.numeric(merged_df$ivorycoast_avg_temp)
+
+merged_df <- na.omit(merged_df)
+
+best_model_train <- ardl(daily_price ~ cameroon_ex_rate + cameroon_avg_temp + ghana_ex_rate + ghana_avg_temp + trend,
+  data = train_data[, -1],
+ order = c(5,5,5,5,5,5))
+
+
+# Bounds Test for Cointegration with multiple independent variables
+uecm_model <- uecm(best_model_train, data=train_data[, -1])
+#bounds_f_test(best_model_1, case = 3)
+
+get_model_metrics <- function(model) {
+  residuals <- residuals(model)
+  
+  # Perform Tests
+  ljung <- Box.test(residuals, lag = 10, type = "Ljung-Box")$p.value
+  bp <- bptest(model)$p.value
+  shapiro <- shapiro.test(residuals)$p.value
+  aic_val <- AIC(model)
+  bic_val <- BIC(model)
+  
+  # Return Results
+  return(c(Ljung_Box = ljung, BP_Test = bp, Shapiro_Test = shapiro, 
+           AIC = aic_val, BIC = bic_val))
+}
+
+model_metrics <- rbind(
+  Model_without_2324 = get_model_metrics(best_model_train),model_eucm = get_model_metrics(uecm_model)
+  
+)
+
+# Convert to Data Frame for Better Viewing
+model_metrics_df <- as.data.frame(model_metrics)
+
+#calculting training and testing RMSE
+
+L <- function(x, k) dplyr::lag(x, k)
+#max_lag <- max(c(2, 5, 0, 0, 0, 2))  # Get the highest lag in your model
+
+# Ensure `test_set` has enough historical data
+#test_data <- bind_rows(tail(train_data, max_lag), test_data)
+
+predictions_test <- predict(best_model_train, newdata=test_data,se.fit=TRUE)
+
+actual_values_test <- test_data$daily_price
+
+actual_values_train <- train_data$daily_price
+
+predictions_test_final <- predictions_test$fit
+
+#training predictions
+predictions_train <- predict(best_model_train, newdata=train_data,se.fit=TRUE)
+
+
+# Now you can calculate performance metrics for the trimmed test data
+rmse_test <- sqrt(mean((actual_values_test - predictions_test_final)^2, na.rm = TRUE))
+mae <- mean(abs(actual_values_test - predictions_test_final), na.rm = TRUE)
+
+rmse_train <- sqrt(mean((actual_values_train - predictions_train$fit)^2, na.rm = TRUE))
+
+#max(merged_df_break$daily_price)
+
+# Assuming your actual and forecasted values are in vectors: actual_prices and forecasted_prices
+# And you have a time variable or index (e.g., time_index)
+forecast_se <- predictions_test$se.fit
+data <- data.frame(
+  Time = 1:(length(actual_values_test)-5),
+  Actual = actual_values_test[6:length(actual_values_test)],
+  Forecasted = predictions_test_final[6:length(actual_values_test)],
+  Lower_Bound = predictions_test_final[6:length(actual_values_test)] - 1.96 * forecast_se[6:length(actual_values_test)],  # 95% Lower CI
+  Upper_Bound = predictions_test_final[6:length(actual_values_test)] + 1.96 * forecast_se[6:length(actual_values_test)]   # 95% Upper CI
+)
+
+
+# Create the line plot
+ggplot(data, aes(x = Time)) +
+  geom_line(aes(y = Actual, color = "Actual"), size = 1) +    # Actual values line
+  geom_line(aes(y = Forecasted, color = "Forecasted"), size = 1, linetype = "dashed") +  geom_ribbon(aes(ymin = Lower_Bound, ymax = Upper_Bound), fill = "red", alpha = 0.2) + # Forecasted values line
+  labs(title = "ARDL Forecasted vs Actual Prices",
+       x = "Time (August 2024 - November 2024)",
+       y = "Cocoa Futures Price") +
+  scale_color_manual(name = "Legend", values = c("Actual" = "blue", "Forecasted" = "red")) +
+  theme_minimal()
+```
+
+```{r}
+predictor_models <- data.frame(
+  Predictor = c("Cameroon Average Temperature", "Cameroon Exchange Rate", 
+                "Ghana Average Temperature", "Ghana Exchange Rate"),
+  Model = c("ARIMA(0,0,3)", "ARIMA(0,1,1)", 
+            "ARIMA(0,0,3)", "ARIMA(0,1,3)")
+)
+
+kable(predictor_models, caption = "ARIMA Models for Cocoa Price Predictors") |>
+  kable_styling("striped")
+```
+
+```{r}
+#SARIMA for cameroon temperature
+
+library(smooth)
+
+ts_data <- ts_data[0:205,]
+
+# SARIMA for cameroon temperature
+sarima_cameroon_temp <- auto.ssarima(ts_data[,'cameroon_avg_temp'])
+
+summary(sarima_cameroon_temp)
+  
+#auto.arima(merged_df$cameroon_avg_temp, seasonal=TRUE,stepwise=FALSE, approximation=FALSE, trace=FALSE)
+
+checkresiduals(sarima_cameroon_temp)
+
+Box.test(sarima_cameroon_temp$residuals, lag = 10, type = "Ljung-Box")$p.value
+
+
+# SARIMA for cameroon exchange rate
+sarima_cameroon_ex <- auto.ssarima(ts_data[,'cameroon_ex_rate'])
+
+summary(sarima_cameroon_ex)
+  
+#auto.arima(merged_df$cameroon_avg_temp, seasonal=TRUE,stepwise=FALSE, approximation=FALSE, trace=FALSE)
+
+checkresiduals(sarima_cameroon_ex)
+
+Box.test(sarima_cameroon_ex$residuals, lag = 10, type = "Ljung-Box")$p.value
+
+
+#SARIMA for ghana temperature
+sarima_ghana_temp <- auto.ssarima(ts_data[,'ghana_avg_temp'])
+
+summary(sarima_ghana_temp)
+  
+#auto.arima(merged_df$cameroon_avg_temp, seasonal=TRUE,stepwise=FALSE, approximation=FALSE, trace=FALSE)
+
+checkresiduals(sarima_ghana_temp)
+
+Box.test(sarima_ghana_temp$residuals, lag = 10, type = "Ljung-Box")$p.value
+
+
+
+# SARIMA for ghana exchange rate
+sarima_ghana_ex <- auto.ssarima(ts_data[,'ghana_ex_rate'])
+
+summary(sarima_ghana_ex)
+  
+#auto.arima(merged_df$cameroon_avg_temp, seasonal=TRUE,stepwise=FALSE, approximation=FALSE, trace=FALSE)
+
+checkresiduals(sarima_ghana_ex)
+
+Box.test(sarima_ghana_ex$residuals, lag = 10, type = "Ljung-Box")$p.value
+
+training_data <- train_data
+# Generate future dates from July 2024 to November 2024 for historical data
+dates_historical <- seq(from = as.yearmon("2024-07", "%Y-%m"), 
+                        to = as.yearmon("2024-11", "%Y-%m"), 
+                        by = 1/12)
+
+# Generate future dates from December 2024 to March 2025 for forecast
+dates_future <- seq(from = as.yearmon("2024-12", "%Y-%m"), 
+                    to = as.yearmon("2025-07", "%Y-%m"), 
+                    by = 1/12)
+
+
+# Combine both historical and forecast dates
+dates_combined <- c(dates_historical, dates_future)
+
+# Forecast each predictor using SARIMA models for the forecast period (December 2024 to March 2025)
+cameroon_temp_forecast <- predict(sarima_cameroon_temp, n.ahead = length(dates_future))$mean[1:length(dates_future)]
+cameroon_ex_forecast <- predict(sarima_cameroon_ex, n.ahead = length(dates_future))$mean[1:length(dates_future)]
+ghana_temp_forecast <- predict(sarima_ghana_temp, n.ahead = length(dates_future))$mean[1:length(dates_future)]
+ghana_ex_forecast <- predict(sarima_ghana_ex, n.ahead = length(dates_future))$mean[1:length(dates_future)]
+
+# Initialize forecast dataframe for both historical and forecast periods
+forecast_df <- data.frame(
+  Yearmon = dates_combined,
+  cameroon_avg_temp = c(tail(training_data$cameroon_avg_temp, 5), cameroon_temp_forecast),
+  cameroon_ex_rate = c(tail(training_data$cameroon_ex_rate, 5), cameroon_ex_forecast),
+  ghana_avg_temp = c(tail(training_data$ghana_avg_temp, 5), ghana_temp_forecast),
+  ghana_ex_rate = c(tail(training_data$ghana_ex_rate, 5), ghana_ex_forecast),
+  trend = c(tail(training_data$trend, 5), seq(length(dates_future)) + max(training_data$trend)),
+  daily_price = c(tail(training_data$daily_price, 5), rep(NA, length(dates_future)))  # NA for future daily price
+)
+
+for (t in (length(dates_historical) + 1):nrow(forecast_df)) {
+  # Predict the daily_price for the current row (t) using the ARDL model
+  forecast_df$daily_price[t] <- predict(best_model_train, newdata = forecast_df[1:t,])[t]
+}
+
+# Rename forecast_df column to match training_data
+forecast_df <- forecast_df %>% rename(YearMonth = Yearmon)
+
+combined_data <- bind_rows(training_data %>% dplyr::select(YearMonth,daily_price) %>% mutate(type = "Historical"), forecast_df %>% filter(!is.na(daily_price)) %>% dplyr::select(YearMonth, daily_price) %>% mutate(type = "Forecast"))
+
+combined_data$Date <- as.Date(as.yearmon(combined_data$YearMonth))
+
+ggplot(combined_data, aes(x = Date, y = daily_price, color = type)) +
+  geom_line(size = 1) +
+  scale_color_manual(values = c("Historical" = "black", "Forecast" = "red")) +
+  labs(title = "Daily Price with Forecast",
+       x = "Date",
+       y = "Daily Price",
+       color = "Data Type") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+data <- data.frame(
+  Month = c("December 2024", "January 2025", "February 2025"),
+  `Actual Price` = c(9426.31, 10842.69, 9642.11),
+  `ARIMA Results` = c(8278.464, 8000.739, 8218.715),
+  `ARDL Results` = c(6262.458, 7462.340, 7551.912)
+)
+
+kable(data, caption = "Forecast Comparison Table") |>
+  kableExtra::kable_styling("striped")
+```
+
+```{r}
+rmse_data <- data.frame(
+  Model = c("ARIMA", "ARDL"),
+  `RMSE on Training Data` = c(2959.442, 188.43),
+  `RMSE on Testing Data` = c(744.716, 731.709)
+)
+
+kable(rmse_data, caption = "RMSE Comparison Between Models") |>
+  kableExtra::kable_styling("striped")
+```
+
+```{r}
+# Model Evaluation
+model_comparison <- data.frame(
+  Test_Metric = c("Ljung-Box", "Shapiro-Wilk", "GARCH", "Breusch-Pagan", "AIC",
+                  "Testing RMSE"),
+  ARIMA_Model = 
+    c("p = 0.811", "p < 2.2e-16", "p < 2.2e-16", "", "2918.660", "744.72"),
+  ARDL_Model = 
+    c("p = 0.999", "p = 1.893e-15", "", "p = 3.062e-05", "2727.068", "731.707")
+)
+
+kable(model_comparison, 
+      caption = 'Evaluation Metrics and Tests for ARIMA and ARDL') |>
+  kableExtra::kable_styling("striped")
+```
