@@ -735,11 +735,13 @@ combined_data$Date <- as.Date(as.yearmon(combined_data$YearMonth))
 #   theme(plot.title = element_text(hjust = 0.5))
 ```
 
-```{r, fig.width=4, fig.height=3, fig.cap='ARDL Forecast on Price Data from December 2024 to July 2025'}
+```{r, out.width="75%", fig.align='center', fig.cap='ARDL Forecast on Price Data from December 2024 to July 2025'}
 include_graphics("ARDL Forecast.png")
 ```
 
-The ARDL forecast exhibits a rapid decline followed by a rebound in prices. This pattern likely reflects the influence of the immediate pre-November 2024 data, which displays a similar trend
+
+
+The ARDL forecast in Figure 5 exhibits a rapid decline followed by a rebound in prices. This pattern likely reflects the influence of the immediate pre-November 2024 data, which displays a similar trend.
 
 ```{r}
 data <- data.frame(
