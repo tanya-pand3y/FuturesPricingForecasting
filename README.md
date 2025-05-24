@@ -1,5 +1,5 @@
 # Futures Pricing Forecasting
-This repository contains the final project for STA457, focusing on forecasting cocoa futures prices using econometric modeling techniques.
+This repository contains the final project for STA457, focusing on forecasting cocoa futures prices using statistical (time series) and econometric modelling techniques.
 
 ## Project Overview
 The objective of this project is to analyze and forecast cocoa futures prices by employing econometric models. The analysis includes data preprocessing, model selection, and evaluation of forecasting performance.
