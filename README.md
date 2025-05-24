@@ -35,17 +35,17 @@ install.packages(c("forecast", "tseries", "urca", "ggplot2", "readr", "dplyr"))
 ## Running the Analysis
 Clone the repository:
 
-<pre> ```git clone https://github.com/tanya-pand3y/FuturesPricingForecasting.git``` </pre>
+<pre> git clone https://github.com/tanya-pand3y/FuturesPricingForecasting.git </pre>
 
 Open the .Rmd files in RStudio:
 
-<pre> ```STA457 Final Code.Rmd for the complete analysis.``` </pre>
+<pre> STA457 Final Code.Rmd for the complete analysis. </pre>
 
-<pre> ```STA457 Final ARDL.Rmd for the ARDL model specifics.``` </pre>
+<pre> STA457 Final ARDL.Rmd for the ARDL model specifics. </pre>
 
 Run the code chunks sequentially to reproduce the analysis and results.
 
-Results
+## Results
 The analysis demonstrates the application of the ARDL model in forecasting cocoa futures prices. The visualizations (ARDL Forecast.png and ARDL Test.png) illustrate the model's forecasting performance.
 
 
